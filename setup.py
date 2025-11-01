@@ -4,12 +4,12 @@ Run `pip install .` to install.
 Run `pip install -e .` to install in editable mode for development.
 """
 
-from setuptools import setup, find_packages
+from setuptools import setup
 
 setup(
     name="dot2mmd",
     version="0.1.0",
-    packages=find_packages(include=['dot2mmd', 'dot2mmd.*']),
+    packages=["dot2mmd"],
     author="TripleJ Jacek",
     author_email="jjonca@gmail.com",
     description="A utility to convert Graphviz DOT files to MermaidJS syntax.",
