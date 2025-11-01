@@ -5,17 +5,6 @@ Run `pip install -e .` to install in editable mode for development.
 """
 
 from setuptools import setup
-import pathlib
-
-# Get the directory where setup.py is located
-HERE = pathlib.Path(__file__).parent
-
-try:
-    # Read the contents of README.md using the full path
-    # Use .read_text() for automatic encoding handling
-    README = (HERE / "README.md").read_text()
-except FileNotFoundError:
-    README = ""
 
 setup(
     name="dot2mmd",
@@ -24,7 +13,7 @@ setup(
     author="TripleJ",
     author_email="jjonca@gmail.com",
     description="A utility to convert Graphviz DOT files to MermaidJS syntax.",
-    long_description=open('README.md').read(),
+    long_description="A utility to convert Graphviz DOT files to MermaidJS syntax.",
     long_description_content_type="text/markdown",
     url="https://github.com/jacek-jonca/dot2mmd", # Replace with your repo
     
