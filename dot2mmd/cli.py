@@ -1,68 +1,40 @@
-"""
-Command-line interface for the dot2mmd converter.
-"""
+import sys, argparse
+from .convert import dot_to_mermaid
 
-import argparse
-import sys
-from .parser import parse_dot
-from .compiler import MermaidCompiler
 
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Convert Graphviz DOT files to MermaidJS .mmd syntax.",
-        epilog="Example: dot2mmd graph.dot -o graph.mmd"
-    )
-    parser.add_argument(
-        "input_file",
-        metavar="INPUT",
-        type=str,
-        help="Input DOT file path. Use '-' for stdin."
-    )
-    parser.add_argument(
-        "-o", "--output",
-        dest="output_file",
-        type=str,
-        help="Output .mmd file path. (Default: stdout)"
-    )
-    
-    args = parser.parse_args()
+def cli(argv=None) -> int:
+p = argparse.ArgumentParser(prog="dot2mmd", description="Convert DOT to Mermaid .mmd")
+p.add_argument("input")
+p.add_argument("-o", "--output")
+p.add_argument("--no-pydot", dest="use_pydot", action="store_false")
+args = p.parse_args(argv)
 
-    # Read input
-    try:
-        if args.input_file == '-':
-            dot_content = sys.stdin.read()
-        else:
-            with open(args.input_file, 'r', encoding='utf-8') as f:
-                dot_content = f.read()
-    except FileNotFoundError:
-        print(f"Error: Input file not found: {args.input_file}", file=sys.stderr)
-        sys.exit(1)
-    except IOError as e:
-        print(f"Error reading input file: {e}", file=sys.stderr)
-        sys.exit(1)
 
-    # Process
-    try:
-        ast = parse_dot(dot_content)
-        compiler = MermaidCompiler()
-        mermaid_content = compiler.compile(ast)
-    except Exception as e:
-        print(f"Error during conversion: {e}", file=sys.stderr)
-        sys.exit(1)
-        
-    # Write output
-    try:
-        if args.output_file:
-            with open(args.output_file, 'w', encoding='utf-8') as f:
-                f.write(mermaid_content)
-            print(f"Successfully converted '{args.input_file}' to '{args.output_file}'.")
-        else:
-            sys.stdout.write(mermaid_content)
-            
-    except IOError as e:
-        print(f"Error writing output file: {e}", file=sys.stderr)
-        sys.exit(1)
+if args.input == "-":
+dot_text = sys.stdin.read()
+in_name = None
+else:
+with open(args.input, "r", encoding="utf-8") as f:
+dot_text = f.read()
+in_name = args.input
+
+
+mermaid = dot_to_mermaid(dot_text, prefer_pydot=args.use_pydot)
+
+
+out = args.output
+if out is None and in_name:
+out = in_name[:-4] + ".mmd" if in_name.lower().endswith(".dot") else in_name + ".mmd"
+
+
+if out:
+with open(out, "w", encoding="utf-8") as f:
+f.write(mermaid)
+print(f"Wrote {out}")
+else:
+print(mermaid)
+return 0
+
 
 if __name__ == "__main__":
-    main()
+raise SystemExit(cli())
