@@ -10,9 +10,12 @@ import pathlib
 # Get the directory where setup.py is located
 HERE = pathlib.Path(__file__).parent
 
-# Read the contents of README.md using the full path
-# Use .read_text() for automatic encoding handling
-README = (HERE / "README.md").read_text()
+try:
+    # Read the contents of README.md using the full path
+    # Use .read_text() for automatic encoding handling
+    README = (HERE / "README.md").read_text()
+except FileNotFoundError:
+    README = ""
 
 setup(
     name="dot2mmd",
