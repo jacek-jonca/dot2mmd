@@ -9,7 +9,7 @@ from setuptools import setup, find_packages
 setup(
     name="dot2mmd",
     version="0.1.0",
-    packages=find_packages(),
+    packages=["dot2mmd"],
     author="TripleJ",
     author_email="jjonca@gmail.com",
     description="A utility to convert Graphviz DOT files to MermaidJS syntax.",
