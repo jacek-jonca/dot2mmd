@@ -124,6 +124,53 @@ def _dot_to_mermaid_simple(dot_text: str) -> str:
 
     return '\n'.join(mermaid_lines)
 
+def _dot_to_mermaid_pydot(dot_text: str) -> str:
+    if not _HAS_PYDOT:
+        raise RuntimeError("pydot is not installed")
+
+    graphs = pydot.graph_from_dot_data(dot_text)
+    if not graphs:
+        raise ValueError("pydot could not parse DOT input")
+    g = graphs[0]
+
+    is_directed = g.get_type() == "digraph"
+    attrs = g.get_attributes() or {}
+    rankdir = _map_rankdir(attrs)
+    mermaid_lines: list[str] = [f"graph {rankdir}"]
+
+    # Nodes
+    for n in g.get_nodes() or []:
+        if n.get_name() == "node":
+            continue
+        node_id = n.get_name().strip('"')
+        label = n.get_attributes().get("label", node_id)
+        mermaid_lines.append(_format_node(node_id, label))
+
+    # Subgraphs / clusters
+    for sg in g.get_subgraphs() or []:
+        try:
+            sg_name = sg.get_name().strip('"')
+        except Exception:
+            sg_name = "cluster"
+        mermaid_lines.append(f"subgraph {re.sub(r'[^A-Za-z0-9_]+', '_', sg_name)}")
+        for n in sg.get_nodes() or []:
+            if n.get_name() == "node":
+                continue
+            node_id = n.get_name().strip('"')
+            label = n.get_attributes().get("label", node_id)
+            mermaid_lines.append("  " + _format_node(node_id, label))
+        mermaid_lines.append("end")
+
+    # Edges
+    for e in g.get_edges() or []:
+        src = e.get_source().strip('"')
+        dst = e.get_destination().strip('"')
+        ed_attrs = e.get_attributes() or {}
+        label = ed_attrs.get("label")
+        mermaid_lines.append(_format_edge(src, dst, is_directed, label, ed_attrs))
+
+    return "\n".join(mermaid_lines)
+
 
 def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
     dot_text = dot_text.strip()
