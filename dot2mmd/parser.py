@@ -25,7 +25,13 @@ attr_val = pp.QuotedString('"') | pp.QuotedString("'") | ID
 attr_pair = pp.Group(ID + EQ + attr_val)
 attr_list = (
     LBRACK
-    + pp.delimitedList(attr_pair, delim=pp.Optional(pp.oneOf("; ,")))
+    + pp.Optional(  # Add Optional in case of empty list []
+        pp.delimitedList(
+            attr_pair,
+            delim=pp.oneOf("; ,"),  # Delimiter is not optional
+            allow_trailing_delim=True,  # <-- This is the main fix
+        )
+    )
     + RBRACK
 ).setResultsName("attributes")
 
@@ -121,4 +127,5 @@ def parse_dot(dot_string: str) -> Graph:
         print(e.line)
         print(f"{(e.col - 1) * ' '}^")
         raise ValueError(f"Error during conversion: {e.msg}") from e
+
 
