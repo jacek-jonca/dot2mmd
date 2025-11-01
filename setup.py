@@ -4,7 +4,15 @@ Run `pip install .` to install.
 Run `pip install -e .` to install in editable mode for development.
 """
 
-from setuptools import setup, find_packages
+from setuptools import setup
+import pathlib
+
+# Get the directory where setup.py is located
+HERE = pathlib.Path(__file__).parent
+
+# Read the contents of README.md using the full path
+# Use .read_text() for automatic encoding handling
+README = (HERE / "README.md").read_text()
 
 setup(
     name="dot2mmd",
