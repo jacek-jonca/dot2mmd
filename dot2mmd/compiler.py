@@ -1,122 +1,207 @@
 """
-Compiles an AST into MermaidJS syntax.
+Compiles an AST (from ast.py) into a MermaidJS string.
 """
+import textwrap
+from .ast import (
+    Graph,
+    Node,
+    Edge,
+    Subgraph,
+    GraphAttribute,
+    DefaultAttribute,
+)
 
-from . import ast
 
 class MermaidCompiler:
     """
-    Visits AST nodes and compiles them into a Mermaid .mmd string.
-    """
-    def __init__(self):
-        self.output = []
-        self.indent_level = 0
-        self.graph_type = 'graph' # 'graph' or 'digraph'
-        self.global_node_attrs = {}
-        self.global_edge_attrs = {}
-
-    def _indent(self, s: str) -> str:
-        """Indents a string by the current indent level."""
-        return "  " * self.indent_level + s
-
-    def _format_label(self, label: str) -> str:
-        """Formats a label for Mermaid, quoting if necessary."""
-        # Mermaid needs quotes if there are spaces, parens, or other special chars
-        if not label:
-            return '""'
-        if any(c in label for c in ' ()[]{}"\''):
-            # Escape existing quotes
-            label = label.replace('"', '#quot;')
-            return f'"{label}"'
-        return label
+    Compiles a Graph AST node into a MermaidJS string.
     
-    def _get_node_shape(self, node_id: str, attrs: dict) -> str:
-        """Converts DOT shape to Mermaid shape."""
-        label = attrs.get('label', node_id)
-        label = self._format_label(label)
+    Converts DOT features to MermaidJS equivalents where possible.
+    """
+    
+    # Map DOT shapes to MermaidJS bracket types
+    SHAPE_MAP = {
+        "box": ("[", "]"),
+        "rect": ("[", "]"),
+        "rectangle": ("[", "]"),
+        "polygon": ("[", "]"),  # Best effort
+        "ellipse": ("(", ")"),
+        "oval": ("(", ")"),
+        "circle": ("((", "))"),
+        "diamond": ("{", "}"),
+        "default": ("[", "]"), # Default if shape is unknown
+    }
+
+    def __init__(self):
+        self.mmd_lines: list[str] = []
+        self.graph_type_str = "graph"  # 'graph' (undirected) or 'flowchart' (directed)
+        self.edge_op_str = "---" # '---' (undirected) or '-->' (directed)
+        self.rankdir = "TB"  # Default Top-to-Bottom
         
-        shape = attrs.get('shape', self.global_node_attrs.get('shape', 'ellipse'))
-        shape = shape.lower()
+        # Default attribute dictionaries
+        self.default_node_attrs: dict[str, str] = {}
+        self.default_edge_attrs: dict[str, str] = {}
 
-        if shape in ('box', 'rect', 'rectangle'):
-            return f"[{label}]"
-        if shape == 'diamond':
-            return f"{{{label}}}"
-        if shape == 'circle':
-            # Mermaid 'circle' shape is `((label))`
-            return f"(({label}))"
-        if shape in ('ellipse', 'oval'):
-            # Mermaid 'stadium' shape is `([label])`
-            # We'll use default `(label)` for ellipse
-             return f"({label})"
+    def compile(self, graph: Graph) -> str:
+        """Main compilation method."""
+        self.mmd_lines = []
         
-        # Default (includes 'plaintext', 'none', etc.)
-        return f'["{label}"]' # Use quotes to be safe
-
-    def compile(self, graph: ast.Graph) -> str:
-        """Main compilation entry point."""
-        self.output = []
-        self.indent_level = 0
-        self._visit(graph)
-        return "\n".join(self.output)
-
-    def _visit(self, node: ast.ASTNode):
-        """Generic visit method (visitor pattern)."""
-        method_name = f'_visit_{node.__class__.__name__}'
-        visitor = getattr(self, method_name, self._visit_default)
-        return visitor(node)
-
-    def _visit_default(self, node: ast.ASTNode):
-        """Fallback for unhandled AST nodes."""
-        print(f"Warning: No visitor found for {node.__class__.__name__}")
-
-    def _visit_Graph(self, node: ast.Graph):
-        self.graph_type = node.graph_type
-        self.global_node_attrs = node.node_attrs
-        self.global_edge_attrs = node.edge_attrs
+        if graph.type.lower() == "digraph":
+            self.graph_type_str = "flowchart" # Mermaid uses 'flowchart' for directed
+            self.edge_op_str = "-->"
         
-        # Check for layout direction
-        direction = "TD" # Top-Down default
-        if node.graph_attrs.get('rankdir', '').upper() == 'LR':
-            direction = "LR" # Left-Right
+        # 1. Process global attributes first
+        for stmt in graph.statements:
+            if isinstance(stmt, GraphAttribute):
+                if stmt.key.lower() == "rankdir" and stmt.value.lower() == "lr":
+                    self.rankdir = "LR"
+        
+        self.mmd_lines.append(f"{self.graph_type_str} {self.rankdir}")
+
+        # 2. Process default attributes
+        for stmt in graph.statements:
+            if isinstance(stmt, DefaultAttribute):
+                self._process_default_attribute(stmt)
+
+        # 3. Process all other statements
+        for stmt in graph.statements:
+            self._process_statement(stmt, indent=1)
             
-        self.output.append(f"graph {direction}")
-        self.indent_level += 1
-        
-        for stmt in node.stmts:
-            self._visit(stmt)
-            
-        self.indent_level -= 1
+        return "\n".join(self.mmd_lines)
 
-    def _visit_Subgraph(self, node: ast.Subgraph):
-        # Mermaid subgraph IDs don't need 'cluster_' prefix
-        sub_id = node.id.replace("cluster_", "")
-        self.output.append(self._indent(f"subgraph {sub_id}"))
-        self.indent_level += 1
+    def _process_statement(self, stmt: object, indent: int = 0):
+        """Recursively processes a statement node."""
+        indent_str = "    " * indent
         
-        for stmt in node.stmts:
-            self._visit(stmt)
-            
-        self.indent_level -= 1
-        self.output.append(self._indent("end"))
+        if isinstance(stmt, Subgraph):
+            self._process_subgraph(stmt, indent)
+        elif isinstance(stmt, GraphAttribute):
+            # Check for subgraph-specific attributes
+            if stmt.key.lower() == "rankdir" and stmt.value.lower() == "lr":
+                self.mmd_lines.append(f"{indent_str}direction LR")
+        elif isinstance(stmt, DefaultAttribute):
+            # These are processed first, but could be scoped in subgraphs.
+            # For now, we only handle global defaults.
+            pass
+        elif isinstance(stmt, Node):
+            self._process_node(stmt, indent)
+        elif isinstance(stmt, Edge):
+            self._process_edge(stmt, indent)
 
-    def _visit_Node(self, node: ast.Node):
-        shape_str = self._get_node_shape(node.id, node.attrs)
-        self.output.append(self._indent(f"{node.id}{shape_str}"))
+    def _process_default_attribute(self, stmt: DefaultAttribute):
+        """Processes a DefaultAttribute statement."""
+        if stmt.type == "node":
+            self.default_node_attrs.update(stmt.attributes)
+        elif stmt.type == "edge":
+            self.default_edge_attrs.update(stmt.attributes)
 
-    def _visit_Edge(self, node: ast.Edge):
-        # Determine operator
-        op = "-->" if node.op == "->" else "---"
+    def _process_node(self, node: Node, indent: int):
+        """Processes a Node statement."""
+        indent_str = "    " * indent
         
-        # Check for label
-        attrs = {**self.global_edge_attrs, **node.attrs}
-        label_str = ""
-        if 'label' in attrs:
-            label = self._format_label(attrs['label'])
-            label_str = f'|{label}|'
+        # Combine default and specific attributes
+        final_attrs = self.default_node_attrs.copy()
+        final_attrs.update(node.attributes)
+
+        # Mermaid only supports shape and label (via text)
+        label = final_attrs.get("label", node.id)
+        # Get default shape, fallback to 'box' if none set
+        default_shape = self.default_node_attrs.get("shape", "box")
+        shape = final_attrs.get("shape", default_shape) 
+
+        # Escape quotes in label
+        label = label.replace('"', '#quot;')
+        
+        # Mermaid doesn't like newlines in the node text,
+        # but supports <br> tags.
+        label = label.replace("\n", "<br>")
+
+        mermaid_shape = self.SHAPE_MAP.get(shape, self.SHAPE_MAP["default"])
+        
+        self.mmd_lines.append(
+            f'{indent_str}{node.id}{mermaid_shape[0]}"{label}"{mermaid_shape[1]}'
+        )
+
+    def _process_edge(self, edge: Edge, indent: int):
+        """Processes an Edge statement."""
+        indent_str = "    " * indent
+        
+        # Combine default and specific attributes
+        final_attrs = self.default_edge_attrs.copy()
+        final_attrs.update(edge.attributes)
+        
+        label = final_attrs.get("label", "")
+        
+        # Handle 'dir=back'
+        from_node = edge.from_node
+        to_node = edge.to_node
+        edge_op = self.edge_op_str
+        
+        if final_attrs.get("dir") == "back":
+            from_node, to_node = to_node, from_node
             
-        # Unroll edge chains (e.g., a -> b -> c)
-        for i in range(len(node.nodes) - 1):
-            left = node.nodes[i]
-            right = node.nodes[i+1]
-            self.output.append(self._indent(f"{left} {op}{label_str} {right}"))
+        if label:
+            # Escape quotes
+            label = label.replace('"', '#quot;')
+            self.mmd_lines.append(
+                f'{indent_str}{from_node} {edge_op}|"{label}"| {to_node}'
+            )
+        else:
+            self.mmd_lines.append(
+                f"{indent_str}{from_node} {edge_op} {to_node}"
+            )
+
+    def _process_subgraph(self, subgraph: Subgraph, indent: int):
+        """Recursively processes a Subgraph statement."""
+        indent_str = "    " * indent
+        
+        is_rank_same = False
+        if subgraph.id is None:
+            # This is an anonymous subgraph. Check for 'rank=same'.
+            for stmt in subgraph.statements:
+                if (
+                    isinstance(stmt, GraphAttribute)
+                    and stmt.key.lower() == "rank"
+                    and stmt.value.lower() == "same"
+                ):
+                    is_rank_same = True
+                    break
+
+        if subgraph.id and subgraph.id.lower().startswith("cluster"):
+            # This is a Mermaid subgraph
+            subgraph_label = subgraph.id.replace("cluster_", "", 1)
+            self.mmd_lines.append(f'{indent_str}subgraph "{subgraph_label}"')
+            for stmt in subgraph.statements:
+                self._process_statement(stmt, indent + 1)
+            self.mmd_lines.append(f"{indent_str}end")
+            
+        elif is_rank_same:
+            # This is a { rank=same; ... } block
+            node_ids = []
+            for stmt in subgraph.statements:
+                if isinstance(stmt, Node):
+                    # We only need the ID, not the full definition
+                    node_ids.append(stmt.id)
+            
+            if node_ids:
+                # We also need to define the nodes, as they might just be
+                # 'node_id;' statements
+                for stmt in subgraph.statements:
+                    if isinstance(stmt, Node):
+                         # Process node definitions if they have attributes
+                        if stmt.attributes:
+                            self._process_node(stmt, indent)
+
+                # Add the rank line
+                rank_line = indent_str + "{ rank = same; " + "; ".join(node_ids) + " }"
+                # Mermaid docs show 'rank same' but 'rank = same' also works
+                # and is safer. Let's try what the docs show.
+                rank_line = indent_str + "{ rank same; " + "; ".join(node_ids) + " }"
+                self.mmd_lines.append(rank_line)
+            
+        else:
+            # Not a cluster and not rank=same.
+            # Process statements at the current indent level.
+            for stmt in subgraph.statements:
+                self._process_statement(stmt, indent)
+
