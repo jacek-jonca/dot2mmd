@@ -1,25 +1,79 @@
-DOT to MermaidJS Converterdot2mmd is a Python utility to convert graph files from the Graphviz DOT language to MermaidJS (.mmd) syntax.This is a best-effort conversion, as the DOT language is significantly more complex than Mermaid. It supports a common subset of features:
+# dot2mmd
 
-graph and digraph
-Node definitions with label and shape (box, ellipse, diamond, circle)
-Edge definitions with label
-Subgraphs (prefixed with cluster_)
-Global graph, node, and edge attributes
-rankdir=LR for Left-to-Right layout
+Convert Graphviz DOT files to MermaidJS `.mmd` syntax.
 
-Installation
+## Features
 
-You must have Python 3.7+ installed.Clone this repository or download the source code.Navigate to the directory containing setup.py.Install the package using pip:# To install the package:
+- Converts directed (`digraph`) and undirected (`graph`) DOT graphs to MermaidJS flowcharts.
+- Supports node and edge labels, including HTML-like labels.
+- Subgraphs (clusters) are converted to Mermaid `subgraph` blocks.
+- Detects and applies `rankdir` (TB, LR, RL) to adjust Mermaid direction.
+- Optional `pydot` support for robust DOT parsing.
+- Fallback parser handles common DOT syntax if `pydot` is not installed.
+
+## Limitations
+
+- Complex DOT constructs (ports, HTML tables, shapes beyond simple rectangles) may not fully convert.
+- Mermaid styling beyond labels (colors, shapes) is not preserved.
+- Only supports flowchart diagrams; sequence diagrams or other Mermaid types are not supported.
+
+## Installation
+
+```bash
 pip install .
+# With pydot support for full DOT compatibility
+pip install .[pydot]
+```
 
-# For development (editable install):
-pip install -e .
+## CLI Usage
 
-This will install the package and its dependency (pyparsing) and add the dot2mmd command to your shell's path.UsageYou can use the tool from the command line.dot2mmd [INPUT_FILE] -o [OUTPUT_FILE]
+```bash
+# Convert a DOT file to a Mermaid file
+python -m dot2mmd input.dot -o output.mmd
 
-ArgumentsINPUT_FILE: The path to the input .dot file. Use - to read from stdin.-o, --output [OUTPUT_FILE]: The path to the output .mmd file. If omitted, the result will be printed to stdout.Examples1. Convert a file to another file:dot2mmd my_graph.dot -o my_graph.mmd
+# Use stdin and stdout
+cat input.dot | python -m dot2mmd - > output.mmd
 
-2. Convert a file to print to console:dot2mmd my_graph.dot
+# CLI script usage if installed
+dot2mmd input.dot -o output.mmd
+```
 
-3. Use with pipes (stdin/stdout):cat my_graph.dot | dot2mmd -
+## Python API
 
+```python
+from dot2mmd import dot_to_mermaid
+
+dot_source = """
+digraph {
+    A -> B [label="Edge"]
+    subgraph cluster_0 {
+        C; D;
+    }
+}
+"""
+
+mermaid_str = dot_to_mermaid(dot_source)
+print(mermaid_str)
+```
+
+## Tests
+
+Run tests using `pytest`:
+
+```bash
+pytest
+```
+
+### Example tests include:
+- Directed and undirected edges
+- Node labels with spaces
+- Edge labels and HTML labels
+- Subgraph/cluster support
+- Rankdir detection (TB, LR, RL)
+
+## Notes
+
+- Works best with `pydot` installed.
+- Mermaid output is a flowchart by default.
+- Multi-word node labels are automatically quoted.
+- Designed for lightweight conversion; not all Graphviz features are supported.
