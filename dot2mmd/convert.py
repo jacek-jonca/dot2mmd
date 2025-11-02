@@ -38,10 +38,7 @@ def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None, at
         return f"{a_id} {sep} |{label_text}| {b_id}"
     return f"{a_id} {sep} {b_id}"
 
-# -------------------- Simple parser --------------------
-
-_node_line_re = re.compile(r"^\s*([A-Za-z0-9_\-\"<>]+)\s*(\[.*\])?\s*;?\s*$")
-_edge_line_re = re.compile(r"^\s*([A-Za-z0-9_\"<>:]+)\s*([-]{1,2}|->|-->)\s*([A-Za-z0-9_\"<>:]+)\s*(\[.*\])?\s*;?\s*$")
+# -------------------- Attribute parser --------------------
 
 def _parse_attr_block(block: str) -> Dict[str, str]:
     """
@@ -61,6 +58,11 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
             val = val.strip().strip('"')
             d[key.strip()] = val.strip()
     return d
+
+# -------------------- Simple parser --------------------
+
+_node_line_re = re.compile(r"^\s*([A-Za-z0-9_\-\"<>]+)\s*(\[.*\])?\s*;?\s*$")
+_edge_line_re = re.compile(r"^\s*([A-Za-z0-9_\"<>:]+)\s*([-]{1,2}|->|-->)\s*([A-Za-z0-9_\"<>:]+)\s*(\[.*\])?\s*;?\s*$")
 
 def _dot_to_mermaid_simple(dot_text: str) -> str:
     # Remove comments
@@ -203,4 +205,4 @@ def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
         except Exception:
             return _dot_to_mermaid_simple(dot_text)
 
-    return _dot_to_mer
+    return _dot_to_mermaid_simple(dot_text)
