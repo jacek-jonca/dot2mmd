@@ -1,41 +1,32 @@
-# -------------------- dot2mmd/cli.py --------------------
-import sys
 import argparse
-from .convert import dot_to_mermaid
+from .converter import Dot2Mermaid
 
-def cli(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="dot2mmd", description="Convert DOT to Mermaid .mmd")
-    parser.add_argument("input", help="Input DOT file or '-' for stdin")
-    parser.add_argument("-o", "--output", help="Output .mmd file")
-    parser.add_argument("--no-pydot", dest="use_pydot", action="store_false", help="Disable pydot parser")
-    args = parser.parse_args(argv)
+def main():
+    parser = argparse.ArgumentParser(
+        description="Convert Graphviz DOT files to MermaidJS .mmd with full styling"
+    )
+    parser.add_argument("input", help="Path to DOT input file")
+    parser.add_argument("-o", "--output", help="Path to output Mermaid file", default="output.mmd")
+    parser.add_argument("-g", "--graph", help="Graph type (graph TD, graph LR, etc.)", default="graph TD")
+    args = parser.parse_args()
 
-    # Read DOT input
-    if args.input == "-":
-        dot_text = sys.stdin.read()
-        in_name = None
-    else:
-        with open(args.input, "r", encoding="utf-8") as f:
+    try:
+        with open(args.input, "r") as f:
             dot_text = f.read()
-        in_name = args.input
+    except Exception as e:
+        print(f"Error reading input file: {e}")
+        return
 
-    # Convert to Mermaid
-    mermaid = dot_to_mermaid(dot_text, prefer_pydot=args.use_pydot)
+    converter = Dot2Mermaid(dot_text, graph_type=args.graph)
+    try:
+        mermaid_text = converter.convert()
+    except Exception as e:
+        print(f"Error converting DOT to Mermaid: {e}")
+        return
 
-    # Determine output path
-    out_path = args.output
-    if out_path is None and in_name:
-        out_path = in_name[:-4] + ".mmd" if in_name.lower().endswith(".dot") else in_name + ".mmd"
-
-    # Write or print output
-    if out_path:
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(mermaid)
-        print(f"Wrote {out_path}")
-    else:
-        print(mermaid)
-
-    return 0
-
-if __name__ == "__main__":
-    raise SystemExit(cli())
+    try:
+        with open(args.output, "w") as f:
+            f.write(mermaid_text)
+        print(f"Mermaid file written to '{args.output}'")
+    except Exception as e:
+        print(f"Error writing output file: {e}")
