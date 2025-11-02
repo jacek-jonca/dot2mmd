@@ -1,3 +1,6 @@
 """dot2mmd package: convert Graphviz DOT to MermaidJS (.mmd)."""
-from .convert import dot_to_mermaid
-__all__ = ["dot_to_mermaid"]
+from .converter import Dot2Mermaid
+from .parser import DotParser
+
+__all__ = ["Dot2Mermaid", "DotParser"]
+
