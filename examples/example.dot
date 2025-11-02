@@ -1,0 +1,7 @@
+digraph G {
+    A [label="Start", shape=circle, color=green];
+    B [label="Decision", shape=diamond, color=red];
+    C [label="End", shape=box];
+    A -> B [label="go", style=dashed, color=blue];
+    B -> C [dir=both];
+}
