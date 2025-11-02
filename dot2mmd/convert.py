@@ -13,7 +13,6 @@ except Exception:
 __all__ = ["dot_to_mermaid"]
 
 # -------------------- Helpers --------------------
-
 def _safe_label(s: Optional[str]) -> str:
     if s is None:
         return ""
@@ -29,22 +28,16 @@ def _map_rankdir(attrs: Dict[str, str]) -> str:
     rd = attrs.get("rankdir", "TB").upper()
     return rd if rd in ("LR", "RL", "TB") else "TB"
 
-def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None, attrs: Optional[Dict[str, str]] = None) -> str:
+def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None) -> str:
     sep = "-->" if directed else "---"
     a_id = re.sub(r"[^A-Za-z0-9_]+", "_", a)
     b_id = re.sub(r"[^A-Za-z0-9_]+", "_", b)
     if label:
-        label_text = _safe_label(label.strip())
-        return f"{a_id} {sep} |{label_text}| {b_id}"
+        return f"{a_id} {sep} |{label.strip()}| {b_id}"
     return f"{a_id} {sep} {b_id}"
 
-# -------------------- Attribute parser --------------------
-
+# -------------------- Simple parser --------------------
 def _parse_attr_block(block: str) -> Dict[str, str]:
-    """
-    Parse a DOT attribute block like [ label = " YES"; dir=back ]
-    into a dictionary. Preserves labels with spaces and line breaks.
-    """
     d: Dict[str, str] = {}
     if not block:
         return d
@@ -55,86 +48,57 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
             continue
         if "=" in part:
             key, val = part.split("=", 1)
-            val = val.strip().strip('"')
-            d[key.strip()] = val.strip()
+            d[key.strip()] = val.strip().strip('"')
     return d
 
-# -------------------- Simple parser --------------------
-
-_node_line_re = re.compile(r"^\s*([A-Za-z0-9_\-\"<>]+)\s*(\[.*\])?\s*;?\s*$")
-_edge_line_re = re.compile(r"^\s*([A-Za-z0-9_\"<>:]+)\s*([-]{1,2}|->|-->)\s*([A-Za-z0-9_\"<>:]+)\s*(\[.*\])?\s*;?\s*$")
-
 def _dot_to_mermaid_simple(dot_text: str) -> str:
-    # Remove comments
     text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
 
     directed = False
-    attrs_global: Dict[str, str] = {}
-    nodes_seen: Dict[str, Dict] = {}
-    edges_seen: list = []
+    nodes: Dict[str, Dict[str, str]] = {}
+    edges: list = []
+
+    node_line_re = re.compile(r"^([A-Za-z0-9_]+)\s*(\[(.*?)\])?\s*;?$")
+    edge_line_re = re.compile(r"^([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*(\[(.*?)\])?\s*;?$")
 
     for ln in lines:
-        m = re.match(r"^(digraph|graph)\b", ln, re.I)
-        if m:
-            directed = m.group(1).lower() == "digraph"
-            continue
-        if ln in ["{", "}"] or ln.endswith("{") or ln.endswith("}"):
-            continue
-        m_attr = re.match(r"^([A-Za-z0-9_\-]+)\s*=\s*([A-Za-z0-9_\"<>:]+)\s*;?", ln)
-        if m_attr:
-            key, val = m_attr.group(1), m_attr.group(2).strip('"')
-            attrs_global[key] = val
-            continue
-        m = _edge_line_re.match(ln)
-        if m:
-            a, op, b = m.group(1).strip('"'), m.group(2), m.group(3).strip('"')
-            attrs_block = m.group(4) or ""
-            attr_d = _parse_attr_block(attrs_block)
-            nodes_seen.setdefault(a, {})
-            nodes_seen.setdefault(b, {})
-            edges_seen.append((a, b, directed, attr_d))
-            continue
-        m = _node_line_re.match(ln)
-        if m:
-            name = m.group(1).strip('"')
-            block = m.group(2) or ""
-            attr_d = _parse_attr_block(block)
-            nodes_seen.setdefault(name, {}).update(attr_d)
-            continue
+        m_node = node_line_re.match(ln)
+        m_edge = edge_line_re.match(ln)
+        if m_node and not m_edge:
+            name, _, attr_block = m_node.groups()
+            nodes[name] = {}
+            if attr_block:
+                nodes[name].update(_parse_attr_block(attr_block))
+        elif m_edge:
+            src, dst, _, attr_block = m_edge.groups()
+            attrs = {}
+            if attr_block:
+                attrs.update(_parse_attr_block(attr_block))
+            edges.append((src, dst, attrs))
 
-    rankdir = _map_rankdir(attrs_global)
-    mermaid_lines = [f"graph {rankdir}"]
+    mermaid_lines = ["graph TB"]
+    shape_map = {"oval": "[{}]", "box": "[{}]", "diamond": "{{{}}}"}
 
-    # Node shapes mapping
-    node_format_map = {
-        "diamond": "{}{{{}}}",  # Mermaid diamond
-        "oval": "{}[{}]",       # Mermaid oval/rectangle
-        "box": "{}[{}]",
-    }
-
-    # Nodes with label & shape
-    for n, ad in nodes_seen.items():
+    # Nodes
+    for n, ad in nodes.items():
         label = ad.get("label", n).replace("\n", "\\n")
-        shape = ad.get("shape", "oval").lower()
-        fmt = node_format_map.get(shape, "{}[{}]")
-        safe_id = re.sub(r"[^A-Za-z0-9_]+", "_", n)
-        mermaid_lines.append(fmt.format(safe_id, label))
+        shape = ad.get("shape", "oval")
+        fmt = shape_map.get(shape, "[{}]")
+        mermaid_lines.append(f"{n}{fmt.format(label)}")
 
     # Edges
-    for a, b, directed_flag, ad in edges_seen:
+    for src, dst, ad in edges:
         label = ad.get("label")
-        mermaid_lines.append(_format_edge(a, b, directed_flag, label, ad))
+        mermaid_lines.append(_format_edge(src, dst, directed=True, label=label))
 
     return "\n".join(mermaid_lines)
 
 # -------------------- Pydot parser --------------------
-
 def _dot_to_mermaid_pydot(dot_text: str) -> str:
     if not _HAS_PYDOT:
         raise RuntimeError("pydot is not installed")
-
     graphs = pydot.graph_from_dot_data(dot_text)
     if not graphs:
         raise ValueError("pydot could not parse DOT input")
@@ -146,54 +110,26 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
     mermaid_lines: list[str] = [f"graph {rankdir}"]
 
     # Nodes
+    shape_map = {"diamond": "{{{}}}", "oval": "[{}]", "box": "[{}]"}
     for n in g.get_nodes() or []:
         if n.get_name() == "node":
             continue
         node_id = n.get_name().strip('"')
         label = n.get_attributes().get("label", node_id).replace("\n", "\\n")
         shape = n.get_attributes().get("shape", "oval").lower()
-        fmt = {
-            "diamond": "{}{{{}}}",
-            "oval": "{}[{}]",
-            "box": "{}[{}]",
-        }.get(shape, "{}[{}]")
-        safe_id = re.sub(r"[^A-Za-z0-9_]+", "_", node_id)
-        mermaid_lines.append(fmt.format(safe_id, label))
-
-    # Subgraphs / clusters
-    for sg in g.get_subgraphs() or []:
-        try:
-            sg_name = sg.get_name().strip('"')
-        except Exception:
-            sg_name = "cluster"
-        mermaid_lines.append(f"subgraph {re.sub(r'[^A-Za-z0-9_]+', '_', sg_name)}")
-        for n in sg.get_nodes() or []:
-            if n.get_name() == "node":
-                continue
-            node_id = n.get_name().strip('"')
-            label = n.get_attributes().get("label", node_id).replace("\n", "\\n")
-            shape = n.get_attributes().get("shape", "oval").lower()
-            fmt = {
-                "diamond": "{}{{{}}}",
-                "oval": "{}[{}]",
-                "box": "{}[{}]",
-            }.get(shape, "{}[{}]")
-            safe_id = re.sub(r"[^A-Za-z0-9_]+", "_", node_id)
-            mermaid_lines.append("  " + fmt.format(safe_id, label))
-        mermaid_lines.append("end")
+        fmt = shape_map.get(shape, "[{}]")
+        mermaid_lines.append(f"{node_id}{fmt.format(label)}")
 
     # Edges
     for e in g.get_edges() or []:
         src = e.get_source().strip('"')
         dst = e.get_destination().strip('"')
-        ed_attrs = e.get_attributes() or {}
-        label = ed_attrs.get("label")
-        mermaid_lines.append(_format_edge(src, dst, is_directed, label, ed_attrs))
+        label = e.get_attributes().get("label")
+        mermaid_lines.append(_format_edge(src, dst, is_directed, label))
 
     return "\n".join(mermaid_lines)
 
 # -------------------- Public API --------------------
-
 def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
     dot_text = dot_text.strip()
     if not dot_text:
