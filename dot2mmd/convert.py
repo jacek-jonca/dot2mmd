@@ -1,3 +1,4 @@
+# -------------------- dot2mmd/convert.py --------------------
 from __future__ import annotations
 import re
 from typing import Dict, Optional
@@ -37,14 +38,12 @@ def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None, at
     sep = "-->" if directed else "---"
     a_id = re.sub(r"[^A-Za-z0-9_]+", "_", a)
     b_id = re.sub(r"[^A-Za-z0-9_]+", "_", b)
-    
-    if label is not None:
-        label_text = _safe_label(label.strip())
+    if label:
+        label_text = _safe_label(label)
         return f"{a_id} {sep} |{label_text}| {b_id}"
-    else:
-        return f"{a_id} {sep} {b_id}"
+    return f"{a_id} {sep} {b_id}"
 
-# -------------------- pydot parser --------------------
+# -------------------- Pydot parser --------------------
 
 def _dot_to_mermaid_pydot(dot_text: str) -> str:
     if not _HAS_PYDOT:
@@ -97,16 +96,24 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
 
 _node_line_re = re.compile(r"^\s*([A-Za-z0-9_\-\"<>]+)\s*(\[.*\])?\s*;?\s*$")
 _edge_line_re = re.compile(r"^\s*([A-Za-z0-9_\"<>:]+)\s*([-]{1,2}|->|-->)\s*([A-Za-z0-9_\"<>:]+)\s*(\[.*\])?\s*;?\s*$")
-_attr_re = re.compile(r"([a-zA-Z0-9_\-]+)\s*=\s*\"?([^\",\\]]+)\"?")
 
 def _parse_attr_block(block: str) -> Dict[str, str]:
+    """
+    Parse a DOT attribute block like [ label = " YES"; dir=back ]
+    into a dictionary. Preserves labels with spaces.
+    """
     d: Dict[str, str] = {}
     if not block:
         return d
     block = block.strip().lstrip("[").rstrip("]").strip()
-    for m in _attr_re.finditer(block):
-        key, val = m.group(1), m.group(2)
-        d[key.strip()] = val
+    for part in block.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        if "=" in part:
+            key, val = part.split("=", 1)
+            val = val.strip().strip('"')
+            d[key.strip()] = val.strip()
     return d
 
 def _dot_to_mermaid_simple(dot_text: str) -> str:
@@ -174,6 +181,7 @@ def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
         try:
             return _dot_to_mermaid_pydot(dot_text)
         except Exception:
+            # fallback to simple parser if pydot fails
             return _dot_to_mermaid_simple(dot_text)
 
     return _dot_to_mermaid_simple(dot_text)
