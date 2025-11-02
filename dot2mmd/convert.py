@@ -17,26 +17,14 @@ def _safe_label(s: Optional[str]) -> str:
     if s is None:
         return ""
     s = s.strip()
-    if s == "":
-        return ""
     s = s.replace('"', '\\"')
-    if re.search(r"\s|<|>", s):
-        return f'"{s}"'
     return s
 
 def _map_rankdir(attrs: Dict[str, str]) -> str:
     rd = attrs.get("rankdir", "TB").upper()
     return rd if rd in ("LR", "RL", "TB") else "TB"
 
-def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None) -> str:
-    sep = "-->" if directed else "---"
-    a_id = re.sub(r"[^A-Za-z0-9_]+", "_", a)
-    b_id = re.sub(r"[^A-Za-z0-9_]+", "_", b)
-    if label:
-        return f"{a_id} {sep} |{label.strip()}| {b_id}"
-    return f"{a_id} {sep} {b_id}"
-
-# -------------------- Simple parser --------------------
+# -------------------- Simple parser with inline node labels --------------------
 def _parse_attr_block(block: str) -> Dict[str, str]:
     d: Dict[str, str] = {}
     if not block:
@@ -52,46 +40,49 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
     return d
 
 def _dot_to_mermaid_simple(dot_text: str) -> str:
+    # Remove comments
     text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
-    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    statements = re.split(r";\s*", text)
 
-    directed = False
     nodes: Dict[str, Dict[str, str]] = {}
     edges: list = []
 
-    node_line_re = re.compile(r"^([A-Za-z0-9_]+)\s*(\[(.*?)\])?\s*;?$")
-    edge_line_re = re.compile(r"^([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*(\[(.*?)\])?\s*;?$")
+    for stmt in statements:
+        stmt = stmt.strip()
+        if not stmt:
+            continue
 
-    for ln in lines:
-        m_node = node_line_re.match(ln)
-        m_edge = edge_line_re.match(ln)
-        if m_node and not m_edge:
-            name, _, attr_block = m_node.groups()
-            nodes[name] = {}
-            if attr_block:
-                nodes[name].update(_parse_attr_block(attr_block))
-        elif m_edge:
-            src, dst, _, attr_block = m_edge.groups()
-            attrs = {}
-            if attr_block:
-                attrs.update(_parse_attr_block(attr_block))
-            edges.append((src, dst, attrs))
+        # Node definition
+        m_node = re.match(r"^([A-Za-z0-9_]+)\s*\[(.*)\]$", stmt)
+        if m_node:
+            name, attr_block = m_node.groups()
+            nodes[name] = _parse_attr_block(attr_block)
+            continue
 
-    mermaid_lines = ["graph TB"]
+        # Edge definition
+        m_edge = re.match(r"^([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*\[(.*)\]$", stmt)
+        if m_edge:
+            src, dst, attr_block = m_edge.groups()
+            edges.append((src, dst, _parse_attr_block(attr_block)))
+            continue
+
     shape_map = {"oval": "[{}]", "box": "[{}]", "diamond": "{{{}}}"}
+    mermaid_lines = ["graph TB"]
 
-    # Nodes
-    for n, ad in nodes.items():
-        label = ad.get("label", n).replace("\n", "\\n")
-        shape = ad.get("shape", "oval")
-        fmt = shape_map.get(shape, "[{}]")
-        mermaid_lines.append(f"{n}{fmt.format(label)}")
-
-    # Edges
+    # Generate edges with inline node labels
     for src, dst, ad in edges:
-        label = ad.get("label")
-        mermaid_lines.append(_format_edge(src, dst, directed=True, label=label))
+        src_label = nodes.get(src, {}).get("label", src).replace("\n", "\\n")
+        src_shape = shape_map.get(nodes.get(src, {}).get("shape", "oval"), "[{}]")
+        dst_label = nodes.get(dst, {}).get("label", dst).replace("\n", "\\n")
+        dst_shape = shape_map.get(nodes.get(dst, {}).get("shape", "oval"), "[{}]")
+        edge_label = ad.get("label")
+        src_node = f"{src}{src_shape.format(src_label)}"
+        dst_node = f"{dst}{dst_shape.format(dst_label)}"
+        if edge_label:
+            mermaid_lines.append(f"{src_node} --> |{edge_label.strip()}| {dst_node}")
+        else:
+            mermaid_lines.append(f"{src_node} --> {dst_node}")
 
     return "\n".join(mermaid_lines)
 
@@ -109,23 +100,38 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
     rankdir = _map_rankdir(attrs)
     mermaid_lines: list[str] = [f"graph {rankdir}"]
 
-    # Nodes
     shape_map = {"diamond": "{{{}}}", "oval": "[{}]", "box": "[{}]"}
+
+    # Nodes
+    nodes: Dict[str, Dict[str, str]] = {}
     for n in g.get_nodes() or []:
         if n.get_name() == "node":
             continue
         node_id = n.get_name().strip('"')
-        label = n.get_attributes().get("label", node_id).replace("\n", "\\n")
-        shape = n.get_attributes().get("shape", "oval").lower()
-        fmt = shape_map.get(shape, "[{}]")
-        mermaid_lines.append(f"{node_id}{fmt.format(label)}")
+        nodes[node_id] = n.get_attributes()
 
     # Edges
     for e in g.get_edges() or []:
         src = e.get_source().strip('"')
         dst = e.get_destination().strip('"')
-        label = e.get_attributes().get("label")
-        mermaid_lines.append(_format_edge(src, dst, is_directed, label))
+        ed_attrs = e.get_attributes() or {}
+
+        src_attr = nodes.get(src, {})
+        dst_attr = nodes.get(dst, {})
+
+        src_label = src_attr.get("label", src).replace("\n", "\\n")
+        src_shape = shape_map.get(src_attr.get("shape", "oval"), "[{}]")
+        dst_label = dst_attr.get("label", dst).replace("\n", "\\n")
+        dst_shape = shape_map.get(dst_attr.get("shape", "oval"), "[{}]")
+
+        src_node = f"{src}{src_shape.format(src_label)}"
+        dst_node = f"{dst}{dst_shape.format(dst_label)}"
+
+        edge_label = ed_attrs.get("label")
+        if edge_label:
+            mermaid_lines.append(f"{src_node} --> |{edge_label.strip()}| {dst_node}")
+        else:
+            mermaid_lines.append(f"{src_node} --> {dst_node}")
 
     return "\n".join(mermaid_lines)
 
@@ -134,11 +140,9 @@ def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
     dot_text = dot_text.strip()
     if not dot_text:
         raise ValueError("Empty DOT text")
-
     if prefer_pydot and _HAS_PYDOT:
         try:
             return _dot_to_mermaid_pydot(dot_text)
         except Exception:
             return _dot_to_mermaid_simple(dot_text)
-
     return _dot_to_mermaid_simple(dot_text)
