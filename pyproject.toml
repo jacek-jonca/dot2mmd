@@ -5,12 +5,11 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dot2mmd"
 version = "0.1.0"
-description = "Convert Graphviz DOT to MermaidJS syntax"
-authors = [{ name = "TripleJ Jacek" }]
-dependencies = [] # pydot optional
-
-[project.optional-dependencies]
-pydot = ["pydot"]
+description = "Convert Graphviz DOT files to MermaidJS .mmd syntax with colors, shapes, and styles"
+authors = [{name = "Triple Jay"}]
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
 
 [project.scripts]
-dot2mmd = "dot2mmd.cli:cli"
+dot2mmd = "dot2mmd.cli:main"
