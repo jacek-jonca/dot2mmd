@@ -37,10 +37,9 @@ def _format_edge(a: str, b: str, directed: bool, label: Optional[str] = None, at
     sep = "-->" if directed else "---"
     a_id = re.sub(r"[^A-Za-z0-9_]+", "_", a)
     b_id = re.sub(r"[^A-Za-z0-9_]+", "_", b)
-    label_text = _safe_label(label) if label else None
-
-    # Correct Mermaid placement: nodeA --> |label| nodeB
-    if label_text:
+    
+    if label is not None:
+        label_text = _safe_label(label.strip())
         return f"{a_id} {sep} |{label_text}| {b_id}"
     else:
         return f"{a_id} {sep} {b_id}"
@@ -107,11 +106,10 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
     block = block.strip().lstrip("[").rstrip("]").strip()
     for m in _attr_re.finditer(block):
         key, val = m.group(1), m.group(2)
-        d[key.strip()] = val.strip()
+        d[key.strip()] = val
     return d
 
 def _dot_to_mermaid_simple(dot_text: str) -> str:
-    # Remove comments
     text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
@@ -167,16 +165,4 @@ def _dot_to_mermaid_simple(dot_text: str) -> str:
 
 # -------------------- Public API --------------------
 
-def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
-    dot_text = dot_text.strip()
-    if not dot_text:
-        raise ValueError("Empty DOT text")
-
-    if prefer_pydot and _HAS_PYDOT:
-        try:
-            return _dot_to_mermaid_pydot(dot_text)
-        except Exception:
-            # fallback to simple parser if pydot fails
-            return _dot_to_mermaid_simple(dot_text)
-
-    return _dot_to_mermaid_simple(dot_text)
+def dot_to_mermaid(dot_text: str_
