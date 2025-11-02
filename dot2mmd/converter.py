@@ -17,12 +17,12 @@ STYLE_MAPPING = {
 }
 
 class Dot2Mermaid:
-    def __init__(self, dot_text: str, graph_type: str = "graph TD"):
+    def __init__(self, dot_text: str, graph_type: str = "graph TD", parent_nodes=None, parent_edges=None):
         self.dot_text = dot_text
         self.graph_type = graph_type
         self.parser = DotParser(dot_text)
-        self.node_classes = {}
-        self.edge_classes = {}
+        self.node_classes = parent_nodes if parent_nodes is not None else {}
+        self.edge_classes = parent_edges if parent_edges is not None else {}
 
     def node_to_mermaid(self, node_id: str, attrs: dict) -> str:
         label = attrs.get('label', node_id)
@@ -30,7 +30,6 @@ class Dot2Mermaid:
         template = SHAPE_MAPPING.get(shape, "(%s)")
         mermaid_node = template % label
 
-        # Node color
         color = attrs.get('color')
         if color:
             class_name = f"node_{node_id}"
@@ -47,7 +46,6 @@ class Dot2Mermaid:
             style = "<" + style.strip('-=') + ">"
         mermaid_edge = f"{from_node} {style}{label}{to_node}"
 
-        # Edge color
         color = edge.get('color')
         if color:
             class_name = f"edge_{edge_index}"
@@ -69,23 +67,35 @@ class Dot2Mermaid:
             lines.append(f"class {class_name} stroke:{color}")
         return lines
 
-    def convert(self) -> str:
+    def convert(self, level=0) -> str:
+        indent = '    ' * level
         nodes, edges, subgraphs = self.parser.parse()
-        mermaid_lines = [self.graph_type]
+        mermaid_lines = []
+
+        # Only include graph type at top level
+        if level == 0:
+            mermaid_lines.append(self.graph_type)
 
         node_map = self.convert_nodes(nodes)
-        mermaid_lines.extend(self.convert_edges(edges, node_map))
+        for line in self.convert_edges(edges, node_map):
+            mermaid_lines.append(f"{indent}{line}")
 
-        # Subgraphs
+        # Handle subgraphs recursively
         for cluster_name, cluster_body in subgraphs.items():
-            mermaid_lines.append(f'    subgraph {cluster_name}')
-            sub_converter = Dot2Mermaid(cluster_body, graph_type="")
-            sub_mermaid = sub_converter.convert()
+            mermaid_lines.append(f"{indent}subgraph {cluster_name}")
+            sub_converter = Dot2Mermaid(
+                cluster_body,
+                graph_type="",
+                parent_nodes=self.node_classes,
+                parent_edges=self.edge_classes
+            )
+            sub_mermaid = sub_converter.convert(level=level + 1)
             for line in sub_mermaid.splitlines():
-                mermaid_lines.append(f"        {line}" if line else "")
-            mermaid_lines.append('    end')
+                mermaid_lines.append(f"{line}")
+            mermaid_lines.append(f"{indent}end")
 
-        # Class definitions
-        mermaid_lines.extend(self.generate_class_defs())
+        # Add class definitions only at top level
+        if level == 0:
+            mermaid_lines.extend(self.generate_class_defs())
 
         return '\n'.join(mermaid_lines)
