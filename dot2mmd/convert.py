@@ -165,4 +165,15 @@ def _dot_to_mermaid_simple(dot_text: str) -> str:
 
 # -------------------- Public API --------------------
 
-def dot_to_mermaid(dot_text: str_
+def dot_to_mermaid(dot_text: str, prefer_pydot: bool = True) -> str:
+    dot_text = dot_text.strip()
+    if not dot_text:
+        raise ValueError("Empty DOT text")
+
+    if prefer_pydot and _HAS_PYDOT:
+        try:
+            return _dot_to_mermaid_pydot(dot_text)
+        except Exception:
+            return _dot_to_mermaid_simple(dot_text)
+
+    return _dot_to_mermaid_simple(dot_text)
