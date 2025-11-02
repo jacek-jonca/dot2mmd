@@ -13,19 +13,12 @@ except Exception:
 __all__ = ["dot_to_mermaid"]
 
 # -------------------- Helpers --------------------
-def _safe_label(s: Optional[str]) -> str:
-    if s is None:
-        return ""
-    s = s.strip()
-    s = s.replace('"', '\\"')
-    return s
-
 def _map_rankdir(attrs: Dict[str, str]) -> str:
     rd = attrs.get("rankdir", "TB").upper()
-    return rd if rd in ("LR", "RL", "TB") else "TB"
+    return rd if rd in ("TB", "LR", "RL") else "TB"
 
-# -------------------- Simple parser with inline node labels --------------------
 def _parse_attr_block(block: str) -> Dict[str, str]:
+    """Parse a DOT attribute block [ key1=val1; key2=val2 ]"""
     d: Dict[str, str] = {}
     if not block:
         return d
@@ -39,14 +32,15 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
             d[key.strip()] = val.strip().strip('"')
     return d
 
+# -------------------- Simple parser --------------------
 def _dot_to_mermaid_simple(dot_text: str) -> str:
     # Remove comments
     text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
     text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
-    statements = re.split(r";\s*", text)
 
+    statements = re.split(r";\s*", text)
     nodes: Dict[str, Dict[str, str]] = {}
-    edges: list = []
+    edges = []
 
     for stmt in statements:
         stmt = stmt.strip()
@@ -71,14 +65,21 @@ def _dot_to_mermaid_simple(dot_text: str) -> str:
     mermaid_lines = ["graph TB"]
 
     # Generate edges with inline node labels
-    for src, dst, ad in edges:
-        src_label = nodes.get(src, {}).get("label", src).replace("\n", "\\n")
-        src_shape = shape_map.get(nodes.get(src, {}).get("shape", "oval"), "[{}]")
-        dst_label = nodes.get(dst, {}).get("label", dst).replace("\n", "\\n")
-        dst_shape = shape_map.get(nodes.get(dst, {}).get("shape", "oval"), "[{}]")
-        edge_label = ad.get("label")
+    for src, dst, ed_attrs in edges:
+        # Source node
+        src_attr = nodes.get(src, {})
+        src_label = src_attr.get("label", src).replace("\n", "\\n")
+        src_shape = shape_map.get(src_attr.get("shape", "oval"), "[{}]")
         src_node = f"{src}{src_shape.format(src_label)}"
+
+        # Destination node
+        dst_attr = nodes.get(dst, {})
+        dst_label = dst_attr.get("label", dst).replace("\n", "\\n")
+        dst_shape = shape_map.get(dst_attr.get("shape", "oval"), "[{}]")
         dst_node = f"{dst}{dst_shape.format(dst_label)}"
+
+        # Edge label
+        edge_label = ed_attrs.get("label")
         if edge_label:
             mermaid_lines.append(f"{src_node} --> |{edge_label.strip()}| {dst_node}")
         else:
@@ -95,14 +96,9 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
         raise ValueError("pydot could not parse DOT input")
     g = graphs[0]
 
-    is_directed = g.get_type() == "digraph"
-    attrs = g.get_attributes() or {}
-    rankdir = _map_rankdir(attrs)
-    mermaid_lines: list[str] = [f"graph {rankdir}"]
-
     shape_map = {"diamond": "{{{}}}", "oval": "[{}]", "box": "[{}]"}
 
-    # Nodes
+    # Collect nodes
     nodes: Dict[str, Dict[str, str]] = {}
     for n in g.get_nodes() or []:
         if n.get_name() == "node":
@@ -110,7 +106,9 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
         node_id = n.get_name().strip('"')
         nodes[node_id] = n.get_attributes()
 
-    # Edges
+    mermaid_lines: list[str] = [f"graph {_map_rankdir(g.get_attributes() or {})}"]
+
+    # Collect edges and output with inline node labels
     for e in g.get_edges() or []:
         src = e.get_source().strip('"')
         dst = e.get_destination().strip('"')
