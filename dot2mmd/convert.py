@@ -13,12 +13,7 @@ except Exception:
 __all__ = ["dot_to_mermaid"]
 
 # -------------------- Helpers --------------------
-def _map_rankdir(attrs: Dict[str, str]) -> str:
-    rd = attrs.get("rankdir", "TB").upper()
-    return rd if rd in ("TB", "LR", "RL") else "TB"
-
 def _parse_attr_block(block: str) -> Dict[str, str]:
-    """Parse a DOT attribute block [ key1=val1; key2=val2 ]"""
     d: Dict[str, str] = {}
     if not block:
         return d
@@ -35,36 +30,32 @@ def _parse_attr_block(block: str) -> Dict[str, str]:
 # -------------------- Simple parser --------------------
 def _dot_to_mermaid_simple(dot_text: str) -> str:
     # Remove comments
-    text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
-    text = re.sub(r"//.*?$", "", text, flags=re.MULTILINE)
+    dot_text = re.sub(r"/\*.*?\*/", "", dot_text, flags=re.DOTALL)
+    dot_text = re.sub(r"//.*?$", "", dot_text, flags=re.MULTILINE)
 
-    statements = re.split(r";\s*", text)
+    statements = [s.strip() for s in dot_text.split(";") if s.strip()]
     nodes: Dict[str, Dict[str, str]] = {}
     edges = []
 
-    for stmt in statements:
-        stmt = stmt.strip()
-        if not stmt:
-            continue
+    shape_map = {"oval": "[{}]", "diamond": "{{{}}}"}
 
-        # Node definition
-        m_node = re.match(r"^([A-Za-z0-9_]+)\s*\[(.*)\]$", stmt)
+    for stmt in statements:
+        # Node
+        m_node = re.match(r"^(\w+)\s*\[(.*)\]$", stmt)
         if m_node:
             name, attr_block = m_node.groups()
             nodes[name] = _parse_attr_block(attr_block)
             continue
 
-        # Edge definition
-        m_edge = re.match(r"^([A-Za-z0-9_]+)\s*->\s*([A-Za-z0-9_]+)\s*\[(.*)\]$", stmt)
+        # Edge
+        m_edge = re.match(r"^(\w+)\s*->\s*(\w+)\s*\[(.*)\]$", stmt)
         if m_edge:
             src, dst, attr_block = m_edge.groups()
             edges.append((src, dst, _parse_attr_block(attr_block)))
             continue
 
-    shape_map = {"oval": "[{}]", "box": "[{}]", "diamond": "{{{}}}"}
     mermaid_lines = ["graph TB"]
 
-    # Generate edges with inline node labels
     for src, dst, ed_attrs in edges:
         # Source node
         src_attr = nodes.get(src, {})
@@ -106,9 +97,9 @@ def _dot_to_mermaid_pydot(dot_text: str) -> str:
         node_id = n.get_name().strip('"')
         nodes[node_id] = n.get_attributes()
 
-    mermaid_lines: list[str] = [f"graph {_map_rankdir(g.get_attributes() or {})}"]
+    mermaid_lines: list[str] = ["graph TB"]
 
-    # Collect edges and output with inline node labels
+    # Collect edges
     for e in g.get_edges() or []:
         src = e.get_source().strip('"')
         dst = e.get_destination().strip('"')
